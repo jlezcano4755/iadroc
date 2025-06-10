@@ -24,19 +24,47 @@
 </head>
 <body>
 <h1>Welcome {{ user.name }}</h1>
-<h2>Your jobs</h2>
-<ul>
+<h2>{% if user.role == 'supervisor' %}All jobs{% else %}Your jobs{% endif %}</h2>
+<table border="1" cellpadding="5" cellspacing="0">
+  <tr>
+    <th>ID</th>
+    {% if user.role == 'supervisor' %}<th>User</th>{% endif %}
+    <th>Status</th>
+    <th>Estimate</th>
+    <th>Used</th>
+    <th>Error</th>
+    {% if user.role == 'supervisor' %}<th>Actions</th>{% endif %}
+  </tr>
   {% for job in jobs %}
-    <li>Job {{ job.id }} - {{ job.status }} - estimate: {{ job.token_estimate }} tokens - used: {{ job.tokens_used }} tokens{% if job.error %} - error: {{ job.error }}{% endif %}
-      {% if user.role == 'supervisor' and job.status == 'pending' %}
+  <tr>
+    <td>{{ job.id }}</td>
+    {% if user.role == 'supervisor' %}<td>{{ job.user.name }}</td>{% endif %}
+    <td>{{ job.status }}</td>
+    <td>{{ job.token_estimate }}</td>
+    <td>{{ job.tokens_used }}</td>
+    <td>{{ job.error or '' }}</td>
+    {% if user.role == 'supervisor' %}
+    <td>
+      {% if job.status == 'pending' %}
         <form action="/jobs/{{job.id}}/approve" method="post" style="display:inline;">
           <input type="hidden" name="token" value="{{ token }}"/>
           <button type="submit">Approve</button>
         </form>
+        <form action="/jobs/{{job.id}}/reject" method="post" style="display:inline;">
+          <input type="hidden" name="token" value="{{ token }}"/>
+          <button type="submit">Reject</button>
+        </form>
+      {% elif job.status in ['approved', 'processing'] %}
+        <form action="/jobs/{{job.id}}/cancel" method="post" style="display:inline;">
+          <input type="hidden" name="token" value="{{ token }}"/>
+          <button type="submit">Cancel</button>
+        </form>
       {% endif %}
-    </li>
+    </td>
+    {% endif %}
+  </tr>
   {% endfor %}
-</ul>
+</table>
 
 <h2>Create new job</h2>
 <form id="jobForm" action="/jobs" method="post" enctype="multipart/form-data">

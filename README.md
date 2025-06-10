@@ -18,3 +18,6 @@ FLASK_APP=app.py flask run
 ```
 
 Access the application at `http://localhost:5000/?token=demo` for the analyst user or `http://localhost:5000/?token=maxiasuper` for the supervisor.
+
+The supervisor dashboard lists the history of all jobs with controls to approve,
+reject or cancel them.
