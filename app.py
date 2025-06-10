@@ -26,10 +26,12 @@ class User(db.Model):
 class Job(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user = db.relationship('User', backref='jobs')
     csv_path = db.Column(db.String(200), nullable=False)
     config_path = db.Column(db.String(200), nullable=False)
     config_json = db.Column(db.Text, nullable=False)
-    # possible states: pending, approved, processing, done, failed
+    # possible states: pending, approved, processing, done, failed,
+    # rejected, cancelled
     status = db.Column(db.String(20), default="pending")
     token_estimate = db.Column(db.Integer)
     tokens_used = db.Column(db.Integer, default=0)
@@ -110,7 +112,10 @@ def index():
     user = get_user_from_token(token)
     if not user:
         return 'Unauthorized', 401
-    jobs = Job.query.filter_by(user_id=user.id).all()
+    if user.role == 'supervisor':
+        jobs = Job.query.order_by(Job.created_at.desc()).all()
+    else:
+        jobs = Job.query.filter_by(user_id=user.id).order_by(Job.created_at.desc()).all()
     return render_template('index.html', user=user, jobs=jobs, token=token)
 
 @app.route('/verify', methods=['POST'])
@@ -198,6 +203,33 @@ def approve_job(job_id):
     db.session.commit()
 
     threading.Thread(target=process_job_async, args=(job.id,)).start()
+
+    return redirect(url_for('index', token=token))
+
+@app.route('/jobs/<int:job_id>/reject', methods=['POST'])
+def reject_job(job_id):
+    token = request.form.get('token')
+    user = get_user_from_token(token)
+    if not user or user.role != 'supervisor':
+        return 'Forbidden', 403
+
+    job = Job.query.get_or_404(job_id)
+    job.status = 'rejected'
+    db.session.commit()
+
+    return redirect(url_for('index', token=token))
+
+@app.route('/jobs/<int:job_id>/cancel', methods=['POST'])
+def cancel_job(job_id):
+    token = request.form.get('token')
+    user = get_user_from_token(token)
+    if not user or user.role != 'supervisor':
+        return 'Forbidden', 403
+
+    job = Job.query.get_or_404(job_id)
+    if job.status in ['approved', 'processing']:
+        job.status = 'cancelled'
+        db.session.commit()
 
     return redirect(url_for('index', token=token))
 
