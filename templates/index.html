@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <title>IADROC Jobs</title>
+  <script>
+    function enableVerify() {
+      const csv = document.getElementById('csv').files.length;
+      const config = document.getElementById('config').files.length;
+      document.getElementById('verify').disabled = !(csv && config);
+    }
+    function verifyFiles() {
+      const formData = new FormData(document.getElementById('jobForm'));
+      fetch('/verify', {method:'POST', body: formData}).then(r=>r.json()).then(d=>{
+        if(d.token_estimate!==undefined){
+          document.getElementById('tokens').innerText = d.token_estimate;
+          document.getElementById('token_estimate').value = d.token_estimate;
+          document.getElementById('send').disabled = false;
+        }else{
+          alert(d.error);
+        }
+      });
+    }
+  </script>
+</head>
+<body>
+<h1>Welcome {{ user.name }}</h1>
+<h2>Your jobs</h2>
+<ul>
+  {% for job in jobs %}
+    <li>Job {{ job.id }} - {{ job.status }} - estimate: {{ job.token_estimate }} tokens - used: {{ job.tokens_used }} tokens
+      {% if user.role == 'supervisor' and job.status == 'pending' %}
+        <form action="/jobs/{{job.id}}/approve" method="post" style="display:inline;">
+          <input type="hidden" name="token" value="{{ token }}"/>
+          <button type="submit">Approve</button>
+        </form>
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>
+
+<h2>Create new job</h2>
+<form id="jobForm" action="/jobs" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="token" value="{{ token }}">
+  <input type="hidden" id="token_estimate" name="token_estimate">
+  CSV: <input type="file" id="csv" name="csv" onchange="enableVerify()"><br>
+  Config: <input type="file" id="config" name="config" onchange="enableVerify()"><br>
+  Token estimate: <span id="tokens">-</span><br>
+  <button type="button" id="verify" onclick="verifyFiles()" disabled>Verify</button>
+  <button type="submit" id="send" disabled>Send</button>
+</form>
+</body>
+</html>
