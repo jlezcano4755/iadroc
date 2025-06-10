@@ -1,0 +1,7 @@
+{
+  "retry_times": 3,
+  "max_rows": 10,
+  "model": "placeholder",
+  "target": "text",
+  "new_columns": ["length"]
+}
