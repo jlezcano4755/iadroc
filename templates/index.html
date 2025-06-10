@@ -27,7 +27,7 @@
 <h2>Your jobs</h2>
 <ul>
   {% for job in jobs %}
-    <li>Job {{ job.id }} - {{ job.status }} - estimate: {{ job.token_estimate }} tokens - used: {{ job.tokens_used }} tokens
+    <li>Job {{ job.id }} - {{ job.status }} - estimate: {{ job.token_estimate }} tokens - used: {{ job.tokens_used }} tokens{% if job.error %} - error: {{ job.error }}{% endif %}
       {% if user.role == 'supervisor' and job.status == 'pending' %}
         <form action="/jobs/{{job.id}}/approve" method="post" style="display:inline;">
           <input type="hidden" name="token" value="{{ token }}"/>

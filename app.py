@@ -28,10 +28,12 @@ class Job(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     csv_path = db.Column(db.String(200), nullable=False)
     config_path = db.Column(db.String(200), nullable=False)
+    config_json = db.Column(db.Text, nullable=False)
     # possible states: pending, approved, processing, done, failed
     status = db.Column(db.String(20), default="pending")
     token_estimate = db.Column(db.Integer)
     tokens_used = db.Column(db.Integer, default=0)
+    error = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # --------------------
@@ -73,11 +75,11 @@ def process_job_async(job_id: int):
     if not job:
         return
     job.status = 'processing'
+    job.error = None
     db.session.commit()
 
-    # Load config
-    with open(job.config_path, 'r', encoding='utf-8') as f:
-        config = json.load(f)
+    # Load config from stored json
+    config = json.loads(job.config_json)
 
     processed_rows = []
     try:
@@ -95,6 +97,7 @@ def process_job_async(job_id: int):
         job.status = 'done'
     except Exception as e:
         job.status = 'failed'
+        job.error = str(e)
     db.session.commit()
 
 # --------------------
@@ -156,13 +159,29 @@ def create_job():
     if not all([csv_file, config_file, token_estimate]):
         return 'Missing data', 400
 
-    csv_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{datetime.utcnow().timestamp()}_{csv_file.filename}')
-    config_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{datetime.utcnow().timestamp()}_{config_file.filename}')
-    csv_file.save(csv_path)
-    config_file.save(config_path)
+    # read config file to store json parameters
+    config_bytes = config_file.read()
+    config_file.seek(0)
+    try:
+        config_data = json.loads(config_bytes.decode('utf-8'))
+    except json.JSONDecodeError:
+        return 'Invalid config', 400
 
-    job = Job(user_id=user.id, csv_path=csv_path, config_path=config_path, token_estimate=int(token_estimate))
+    job = Job(user_id=user.id, token_estimate=int(token_estimate),
+              csv_path='', config_path='', config_json=json.dumps(config_data))
     db.session.add(job)
+    db.session.commit()
+
+    job_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(job.id))
+    os.makedirs(job_folder, exist_ok=True)
+    csv_path = os.path.join(job_folder, csv_file.filename)
+    config_path = os.path.join(job_folder, 'config.json')
+    csv_file.save(csv_path)
+    with open(config_path, 'w', encoding='utf-8') as f:
+        f.write(config_bytes.decode('utf-8'))
+
+    job.csv_path = csv_path
+    job.config_path = config_path
     db.session.commit()
 
     return redirect(url_for('index', token=token))
@@ -196,6 +215,7 @@ def job_status(job_id):
         'status': job.status,
         'token_estimate': job.token_estimate,
         'tokens_used': job.tokens_used,
+        'error': job.error,
     })
 
 # --------------------
@@ -206,11 +226,11 @@ def job_status(job_id):
 def initdb():
     db.create_all()
     if not User.query.first():
-        analyst = User(name='analyst1', token='analyst-token', role='analyst')
-        supervisor = User(name='super1', token='super-token', role='supervisor')
+        analyst = User(name='demo', token='demo', role='analyst')
+        supervisor = User(name='super', token='maxiasuper', role='supervisor')
         db.session.add_all([analyst, supervisor])
         db.session.commit()
-        print('Initialized database with sample users.')
+        print('Initialized database with demo users.')
     else:
         print('Database already initialized.')
 
