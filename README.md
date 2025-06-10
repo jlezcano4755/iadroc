@@ -8,7 +8,7 @@ AI-based Asynchronous Data Processor example using Flask and SQLite.
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-flask --app app.py initdb  # create sample users
+flask --app app.py initdb  # create demo users
 ```
 
 ## Running
@@ -17,4 +17,4 @@ flask --app app.py initdb  # create sample users
 FLASK_APP=app.py flask run
 ```
 
-Access the application at `http://localhost:5000/?token=analyst-token` for the analyst user or `http://localhost:5000/?token=super-token` for the supervisor.
+Access the application at `http://localhost:5000/?token=demo` for the analyst user or `http://localhost:5000/?token=maxiasuper` for the supervisor.
