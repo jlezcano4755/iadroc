@@ -40,7 +40,12 @@ class Job(db.Model):
     # rejected, cancelled
     status = db.Column(db.String(20), default="pending")
     token_estimate = db.Column(db.Integer)
+    token_estimate_prompt = db.Column(db.Integer)
+    token_estimate_completion = db.Column(db.Integer)
     tokens_used = db.Column(db.Integer, default=0)
+    tokens_prompt_used = db.Column(db.Integer, default=0)
+    tokens_completion_used = db.Column(db.Integer, default=0)
+    model = db.Column(db.String(100))
     error = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     description = db.Column(db.String(200))
@@ -77,8 +82,8 @@ def analyze_csv(csv_path: str, target: str, delimiter: str = ','):
                 return True, text  # return first non-empty row text
     return False, None
 
-def token_estimator(csv_path: str, config: dict, directive: str, sample_size: int = 5) -> int:
-    """Estimate total token usage by sampling rows and querying OpenAI."""
+def token_estimator(csv_path: str, config: dict, directive: str, sample_size: int = 5) -> dict:
+    """Estimate token usage by sampling rows and querying OpenAI."""
     delimiter = config.get('delimiter', ',')
     with open(csv_path, newline='', encoding='utf-8') as f:
         rows = list(csv.DictReader(f, delimiter=delimiter))
@@ -89,6 +94,8 @@ def token_estimator(csv_path: str, config: dict, directive: str, sample_size: in
     sample_rows = random.sample(rows, min(sample_size, len(rows)))
     api_key = base64.b64decode(config.get('openai_api_key')).decode()
     client = openai.OpenAI(api_key=api_key)
+    total_prompt = 0
+    total_completion = 0
     total_tokens = 0
     successful = 0
 
@@ -112,6 +119,8 @@ def token_estimator(csv_path: str, config: dict, directive: str, sample_size: in
                 )
                 if resp.usage:
                     total_tokens += resp.usage.total_tokens
+                    total_prompt += resp.usage.prompt_tokens or 0
+                    total_completion += resp.usage.completion_tokens or 0
                     successful += 1
                 break
             except Exception as e:
@@ -122,11 +131,17 @@ def token_estimator(csv_path: str, config: dict, directive: str, sample_size: in
     if successful == 0:
         raise RuntimeError(str(last_err))
 
-    avg_tokens = total_tokens / successful
-    return int(avg_tokens * len(rows))
+    avg_total = total_tokens / successful
+    avg_prompt = total_prompt / successful
+    avg_completion = total_completion / successful
+    return {
+        'total': int(avg_total * len(rows)),
+        'prompt': int(avg_prompt * len(rows)),
+        'completion': int(avg_completion * len(rows))
+    }
 
 def openai_process(row: dict, config: dict, directive: str) -> tuple:
-    """Process a row with OpenAI and return the updated row and tokens used."""
+    """Process a row with OpenAI and return the updated row and token usage."""
     text = row.get(config['target'], '') or ''
     retries = config.get('retry_times', 3)
     api_key = base64.b64decode(config.get('openai_api_key')).decode()
@@ -148,8 +163,12 @@ def openai_process(row: dict, config: dict, directive: str) -> tuple:
             data = json.loads(content)
             for col in config.get('new_columns', []):
                 row[col] = data.get(col, '')
-            tokens_used = resp.usage.total_tokens if resp.usage else 0
-            return row, tokens_used
+            if resp.usage:
+                prompt = resp.usage.prompt_tokens or 0
+                completion = resp.usage.completion_tokens or 0
+            else:
+                prompt = completion = 0
+            return row, prompt, completion
         except Exception as e:
             last_err = e
     raise RuntimeError(str(last_err))
@@ -195,10 +214,10 @@ def process_job_async(job_id: int):
                         continue
 
                     try:
-                        result, used = openai_process(row, config, directive_text)
+                        result, p_used, c_used = openai_process(row, config, directive_text)
                     except Exception:
                         job.error_rows += 1
-                        result, used = row, 0
+                        result, p_used, c_used = row, 0, 0
 
                     if writer is None:
                         writer = csv.DictWriter(out_f, fieldnames=result.keys(), delimiter=delimiter)
@@ -207,7 +226,9 @@ def process_job_async(job_id: int):
                     writer.writerow(result)
                     out_f.flush()
                     job.rows_processed = idx + 1
-                    job.tokens_used += used
+                    job.tokens_used += p_used + c_used
+                    job.tokens_prompt_used += p_used
+                    job.tokens_completion_used += c_used
                     if job.rows_processed % snapshot_interval == 0:
                         snap = os.path.join(os.path.dirname(job.csv_path), f'snapshot_{job.rows_processed}.csv')
                         shutil.copy(output_path, snap)
@@ -276,7 +297,12 @@ def verify_files():
         token_est = token_estimator(csv_path, config, directive_text)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-    return jsonify({'message': 'verified', 'token_estimate': token_est})
+    return jsonify({
+        'message': 'verified',
+        'token_estimate_total': token_est['total'],
+        'token_estimate_prompt': token_est['prompt'],
+        'token_estimate_completion': token_est['completion']
+    })
 
 @app.route('/jobs', methods=['POST'])
 def create_job():
@@ -289,9 +315,12 @@ def create_job():
     config_file = request.files.get('config')
     directive_file = request.files.get('directive')
     token_estimate = request.form.get('token_estimate')
+    token_estimate_prompt = request.form.get('token_estimate_prompt')
+    token_estimate_completion = request.form.get('token_estimate_completion')
     description = request.form.get('description')
 
-    if not all([csv_file, config_file, directive_file, token_estimate]):
+    if not all([csv_file, config_file, directive_file, token_estimate,
+                token_estimate_prompt, token_estimate_completion]):
         return 'Missing data', 400
 
     # read config file to store json parameters
@@ -302,10 +331,18 @@ def create_job():
     except json.JSONDecodeError:
         return 'Invalid config', 400
 
-    job = Job(user_id=user.id, token_estimate=int(token_estimate),
-              csv_path='', config_path='', directive_path='',
-              config_json=json.dumps(config_data),
-              description=description)
+    job = Job(
+        user_id=user.id,
+        token_estimate=int(token_estimate),
+        token_estimate_prompt=int(token_estimate_prompt),
+        token_estimate_completion=int(token_estimate_completion),
+        csv_path='',
+        config_path='',
+        directive_path='',
+        config_json=json.dumps(config_data),
+        description=description,
+        model=config_data.get('model')
+    )
     db.session.add(job)
     db.session.commit()
 
@@ -408,8 +445,13 @@ def job_status(job_id):
     return jsonify({
         'id': job.id,
         'status': job.status,
+        'model': job.model,
         'token_estimate': job.token_estimate,
+        'token_estimate_prompt': job.token_estimate_prompt,
+        'token_estimate_completion': job.token_estimate_completion,
         'tokens_used': job.tokens_used,
+        'tokens_prompt_used': job.tokens_prompt_used,
+        'tokens_completion_used': job.tokens_completion_used,
         'error': job.error,
         'rows_processed': job.rows_processed,
         'total_rows': job.total_rows,

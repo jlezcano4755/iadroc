@@ -12,9 +12,13 @@
     function verifyFiles() {
       const formData = new FormData(document.getElementById('jobForm'));
       fetch('/verify', {method:'POST', body: formData}).then(r=>r.json()).then(d=>{
-        if(d.token_estimate!==undefined){
-          document.getElementById('tokens').innerText = d.token_estimate;
-          document.getElementById('token_estimate').value = d.token_estimate;
+        if(d.token_estimate_total!==undefined){
+          document.getElementById('tokens_total').innerText = d.token_estimate_total;
+          document.getElementById('tokens_prompt').innerText = d.token_estimate_prompt;
+          document.getElementById('tokens_completion').innerText = d.token_estimate_completion;
+          document.getElementById('token_estimate').value = d.token_estimate_total;
+          document.getElementById('token_estimate_prompt').value = d.token_estimate_prompt;
+          document.getElementById('token_estimate_completion').value = d.token_estimate_completion;
           document.getElementById('send').disabled = false;
         }else{
           alert(d.error);
@@ -31,9 +35,11 @@
     <th>ID</th>
     {% if user.role == 'supervisor' %}<th>User</th>{% endif %}
     <th>Description</th>
+    <th>Model</th>
     <th>Status</th>
-    <th>Estimate</th>
-    <th>Used</th>
+    <th>Estimate (p/c/t)</th>
+    <th>Used (p/c/t)</th>
+    <th>Avg (p/c)</th>
     <th>Processed</th>
     <th>Error rows</th>
     <th>Error</th>
@@ -46,9 +52,15 @@
     <td>{{ job.id }}</td>
     {% if user.role == 'supervisor' %}<td>{{ job.user.name }}</td>{% endif %}
     <td>{{ job.description or '' }}</td>
+    <td>{{ job.model }}</td>
     <td>{{ job.status }}</td>
-    <td>{{ job.token_estimate }}</td>
-    <td>{{ job.tokens_used }}</td>
+    <td>{{ job.token_estimate_prompt }}/{{ job.token_estimate_completion }}/{{ job.token_estimate }}</td>
+    <td>{{ job.tokens_prompt_used }}/{{ job.tokens_completion_used }}/{{ job.tokens_used }}</td>
+    <td>
+      {% if job.rows_processed %}
+        {{ (job.tokens_prompt_used // job.rows_processed) }}/{{ (job.tokens_completion_used // job.rows_processed) }}
+      {% else %}-/-{% endif %}
+    </td>
     <td>{{ job.rows_processed }}/{{ job.total_rows }}</td>
     <td>{{ job.error_rows }}</td>
     <td>{{ job.error or '' }}</td>
@@ -100,11 +112,15 @@
 <form id="jobForm" action="/jobs" method="post" enctype="multipart/form-data">
   <input type="hidden" name="token" value="{{ token }}">
   <input type="hidden" id="token_estimate" name="token_estimate">
+  <input type="hidden" id="token_estimate_prompt" name="token_estimate_prompt">
+  <input type="hidden" id="token_estimate_completion" name="token_estimate_completion">
   Description: <input type="text" name="description"><br>
   CSV: <input type="file" id="csv" name="csv" onchange="enableVerify()"><br>
   Config: <input type="file" id="config" name="config" onchange="enableVerify()"><br>
   Directive: <input type="file" id="directive" name="directive" onchange="enableVerify()"><br>
-  Token estimate: <span id="tokens">-</span><br>
+  Token estimate total: <span id="tokens_total">-</span><br>
+  Token estimate prompt: <span id="tokens_prompt">-</span><br>
+  Token estimate completion: <span id="tokens_completion">-</span><br>
   <button type="button" id="verify" onclick="verifyFiles()" disabled>Verify</button>
   <button type="submit" id="send" disabled>Send</button>
 </form>
