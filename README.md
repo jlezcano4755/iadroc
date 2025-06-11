@@ -23,3 +23,5 @@ The supervisor dashboard lists the history of all jobs with controls to approve,
 reject or cancel them.
 
 The configuration file must include the OpenAI API key, model parameters, the CSV delimiter and how often to create snapshots. The app uses OpenAI's JSON mode to enforce structured responses, so make sure you have a recent `openai` package installed. See `config.json` for an example of the expected format.
+
+Jobs can optionally include a short description so they are easier to recognize in the dashboard.
