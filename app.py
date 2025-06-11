@@ -41,6 +41,7 @@ class Job(db.Model):
     tokens_used = db.Column(db.Integer, default=0)
     error = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    description = db.Column(db.String(200))
     output_path = db.Column(db.String(200))
     snapshot_path = db.Column(db.String(200))
     rows_processed = db.Column(db.Integer, default=0)
@@ -150,71 +151,72 @@ def openai_process(row: dict, config: dict) -> tuple:
     raise RuntimeError(str(last_err))
 
 def process_job_async(job_id: int):
-    job = Job.query.get(job_id)
-    if not job:
-        return
-    job.status = 'processing'
-    job.error = None
-    db.session.commit()
-
-    config = json.loads(job.config_json)
-    delimiter = config.get('delimiter', ',')
-    snapshot_interval = config.get('snapshot_rows', 100)
-
-    try:
-        with open(job.csv_path, newline='', encoding='utf-8') as f:
-            reader = list(csv.DictReader(f, delimiter=delimiter))
-        job.total_rows = len(reader)
+    with app.app_context():
+        job = Job.query.get(job_id)
+        if not job:
+            return
+        job.status = 'processing'
+        job.error = None
         db.session.commit()
 
-        output_path = os.path.join(os.path.dirname(job.csv_path), 'output.csv')
-        with open(output_path, 'w', newline='', encoding='utf-8') as out_f:
-            writer = None
-            for idx, row in enumerate(reader):
-                if config['max_rows'] and idx >= config['max_rows']:
-                    break
+        config = json.loads(job.config_json)
+        delimiter = config.get('delimiter', ',')
+        snapshot_interval = config.get('snapshot_rows', 100)
 
-                # wait if paused / stop if cancelled
-                while True:
-                    db.session.refresh(job)
-                    if job.status == 'cancelled':
-                        return
-                    if job.status != 'paused':
+        try:
+            with open(job.csv_path, newline='', encoding='utf-8') as f:
+                reader = list(csv.DictReader(f, delimiter=delimiter))
+            job.total_rows = len(reader)
+            db.session.commit()
+
+            output_path = os.path.join(os.path.dirname(job.csv_path), 'output.csv')
+            with open(output_path, 'w', newline='', encoding='utf-8') as out_f:
+                writer = None
+                for idx, row in enumerate(reader):
+                    if config['max_rows'] and idx >= config['max_rows']:
                         break
-                    time.sleep(1)
 
-                if idx < job.rows_processed:
-                    continue
+                    # wait if paused / stop if cancelled
+                    while True:
+                        db.session.refresh(job)
+                        if job.status == 'cancelled':
+                            return
+                        if job.status != 'paused':
+                            break
+                        time.sleep(1)
 
-                try:
-                    result, used = openai_process(row, config)
-                except Exception as e:
-                    job.error_rows += 1
-                    job.error = str(e)
-                    result, used = row, 0
+                    if idx < job.rows_processed:
+                        continue
 
-                if writer is None:
-                    writer = csv.DictWriter(out_f, fieldnames=result.keys(), delimiter=delimiter)
-                    writer.writeheader()
+                    try:
+                        result, used = openai_process(row, config)
+                    except Exception:
+                        job.error_rows += 1
+                        result, used = row, 0
 
-                writer.writerow(result)
-                out_f.flush()
-                job.rows_processed = idx + 1
-                job.tokens_used += used
-                if job.rows_processed % snapshot_interval == 0:
-                    snap = os.path.join(os.path.dirname(job.csv_path), f'snapshot_{job.rows_processed}.csv')
-                    shutil.copy(output_path, snap)
-                    job.snapshot_path = snap
-                db.session.commit()
+                    if writer is None:
+                        writer = csv.DictWriter(out_f, fieldnames=result.keys(), delimiter=delimiter)
+                        writer.writeheader()
 
-        job.output_path = output_path
-        job.snapshot_path = output_path
-        job.status = 'done'
-    except Exception as e:
-        job.status = 'failed'
-        job.error = str(e)
-    finally:
-        db.session.commit()
+                    writer.writerow(result)
+                    out_f.flush()
+                    job.rows_processed = idx + 1
+                    job.tokens_used += used
+                    if job.rows_processed % snapshot_interval == 0:
+                        snap = os.path.join(os.path.dirname(job.csv_path), f'snapshot_{job.rows_processed}.csv')
+                        shutil.copy(output_path, snap)
+                        job.snapshot_path = snap
+                    db.session.commit()
+
+        except Exception as e:
+            job.status = 'failed'
+            job.error = str(e)
+        else:
+            job.output_path = output_path
+            job.snapshot_path = output_path
+            job.status = 'done'
+        finally:
+            db.session.commit()
 
 # --------------------
 # Routes
@@ -277,6 +279,7 @@ def create_job():
     csv_file = request.files.get('csv')
     config_file = request.files.get('config')
     token_estimate = request.form.get('token_estimate')
+    description = request.form.get('description')
 
     if not all([csv_file, config_file, token_estimate]):
         return 'Missing data', 400
@@ -290,7 +293,8 @@ def create_job():
         return 'Invalid config', 400
 
     job = Job(user_id=user.id, token_estimate=int(token_estimate),
-              csv_path='', config_path='', config_json=json.dumps(config_data))
+              csv_path='', config_path='', config_json=json.dumps(config_data),
+              description=description)
     db.session.add(job)
     db.session.commit()
 

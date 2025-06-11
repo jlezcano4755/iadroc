@@ -29,6 +29,7 @@
   <tr>
     <th>ID</th>
     {% if user.role == 'supervisor' %}<th>User</th>{% endif %}
+    <th>Description</th>
     <th>Status</th>
     <th>Estimate</th>
     <th>Used</th>
@@ -43,6 +44,7 @@
   <tr>
     <td>{{ job.id }}</td>
     {% if user.role == 'supervisor' %}<td>{{ job.user.name }}</td>{% endif %}
+    <td>{{ job.description or '' }}</td>
     <td>{{ job.status }}</td>
     <td>{{ job.token_estimate }}</td>
     <td>{{ job.tokens_used }}</td>
@@ -97,6 +99,7 @@
 <form id="jobForm" action="/jobs" method="post" enctype="multipart/form-data">
   <input type="hidden" name="token" value="{{ token }}">
   <input type="hidden" id="token_estimate" name="token_estimate">
+  Description: <input type="text" name="description"><br>
   CSV: <input type="file" id="csv" name="csv" onchange="enableVerify()"><br>
   Config: <input type="file" id="config" name="config" onchange="enableVerify()"><br>
   Token estimate: <span id="tokens">-</span><br>
