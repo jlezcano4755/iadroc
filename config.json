@@ -1,13 +1,12 @@
 {
   "retry_times": 3,
   "max_rows": 10,
-  "openai_api_key": "sk-replace-me",
+  "openai_api_key": "c2stcmVwbGFjZS1tZQ==",
   "model": "gpt-3.5-turbo",
   "target": "sample_text",
   "delimiter": ",",
   "snapshot_rows": 5,
   "new_columns": ["subject", "predicate", "verb"],
-  "directive": "Extract the subject, predicate and verb from the input text using Spanish grammar rules. Respond using JSON with keys subject, predicate and verb only.",
   "schema": {
     "type": "object",
     "properties": {
