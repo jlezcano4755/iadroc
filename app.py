@@ -5,6 +5,7 @@ import threading
 import time
 import shutil
 import random
+import base64
 import openai
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, redirect, url_for, send_file
@@ -33,6 +34,7 @@ class Job(db.Model):
     user = db.relationship('User', backref='jobs')
     csv_path = db.Column(db.String(200), nullable=False)
     config_path = db.Column(db.String(200), nullable=False)
+    directive_path = db.Column(db.String(200), nullable=False)
     config_json = db.Column(db.Text, nullable=False)
     # possible states: pending, approved, processing, done, failed,
     # rejected, cancelled
@@ -75,7 +77,7 @@ def analyze_csv(csv_path: str, target: str, delimiter: str = ','):
                 return True, text  # return first non-empty row text
     return False, None
 
-def token_estimator(csv_path: str, config: dict, sample_size: int = 5) -> int:
+def token_estimator(csv_path: str, config: dict, directive: str, sample_size: int = 5) -> int:
     """Estimate total token usage by sampling rows and querying OpenAI."""
     delimiter = config.get('delimiter', ',')
     with open(csv_path, newline='', encoding='utf-8') as f:
@@ -85,7 +87,8 @@ def token_estimator(csv_path: str, config: dict, sample_size: int = 5) -> int:
         return 0
 
     sample_rows = random.sample(rows, min(sample_size, len(rows)))
-    client = openai.OpenAI(api_key=config.get('openai_api_key'))
+    api_key = base64.b64decode(config.get('openai_api_key')).decode()
+    client = openai.OpenAI(api_key=api_key)
     total_tokens = 0
     successful = 0
 
@@ -100,7 +103,7 @@ def token_estimator(csv_path: str, config: dict, sample_size: int = 5) -> int:
                 resp = client.chat.completions.create(
                     model=config.get('model', 'gpt-3.5-turbo'),
                     messages=[
-                        {"role": "system", "content": config.get('directive', '')},
+                        {"role": "system", "content": directive},
                         {"role": "user", "content": text}
                     ],
                     temperature=config.get('temperature', 0.2),
@@ -122,18 +125,19 @@ def token_estimator(csv_path: str, config: dict, sample_size: int = 5) -> int:
     avg_tokens = total_tokens / successful
     return int(avg_tokens * len(rows))
 
-def openai_process(row: dict, config: dict) -> tuple:
+def openai_process(row: dict, config: dict, directive: str) -> tuple:
     """Process a row with OpenAI and return the updated row and tokens used."""
     text = row.get(config['target'], '') or ''
     retries = config.get('retry_times', 3)
-    client = openai.OpenAI(api_key=config.get('openai_api_key'))
+    api_key = base64.b64decode(config.get('openai_api_key')).decode()
+    client = openai.OpenAI(api_key=api_key)
     last_err = None
     for _ in range(retries):
         try:
             resp = client.chat.completions.create(
                 model=config.get('model', 'gpt-3.5-turbo'),
                 messages=[
-                    {"role": "system", "content": config.get('directive', '')},
+                    {"role": "system", "content": directive},
                     {"role": "user", "content": text}
                 ],
                 temperature=config.get('temperature', 0.2),
@@ -160,6 +164,8 @@ def process_job_async(job_id: int):
         db.session.commit()
 
         config = json.loads(job.config_json)
+        with open(job.directive_path, 'r', encoding='utf-8') as df:
+            directive_text = df.read()
         delimiter = config.get('delimiter', ',')
         snapshot_interval = config.get('snapshot_rows', 100)
 
@@ -189,7 +195,7 @@ def process_job_async(job_id: int):
                         continue
 
                     try:
-                        result, used = openai_process(row, config)
+                        result, used = openai_process(row, config, directive_text)
                     except Exception:
                         job.error_rows += 1
                         result, used = row, 0
@@ -242,7 +248,8 @@ def verify_files():
         return jsonify({'error': 'Unauthorized'}), 401
     csv_file = request.files.get('csv')
     config_file = request.files.get('config')
-    if not csv_file or not config_file:
+    directive_file = request.files.get('directive')
+    if not csv_file or not config_file or not directive_file:
         return jsonify({'error': 'Missing files'}), 400
 
     csv_path = os.path.join(app.config['UPLOAD_FOLDER'], f'tmp_{csv_file.filename}')
@@ -256,6 +263,8 @@ def verify_files():
         except json.JSONDecodeError:
             return jsonify({'error': 'Invalid config JSON'}), 400
 
+    directive_text = directive_file.read().decode('utf-8')
+
     if not validate_config(config):
         return jsonify({'error': 'Config missing required fields'}), 400
 
@@ -264,7 +273,7 @@ def verify_files():
         return jsonify({'error': 'CSV missing target column or no valid rows'}), 400
 
     try:
-        token_est = token_estimator(csv_path, config)
+        token_est = token_estimator(csv_path, config, directive_text)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
     return jsonify({'message': 'verified', 'token_estimate': token_est})
@@ -278,10 +287,11 @@ def create_job():
 
     csv_file = request.files.get('csv')
     config_file = request.files.get('config')
+    directive_file = request.files.get('directive')
     token_estimate = request.form.get('token_estimate')
     description = request.form.get('description')
 
-    if not all([csv_file, config_file, token_estimate]):
+    if not all([csv_file, config_file, directive_file, token_estimate]):
         return 'Missing data', 400
 
     # read config file to store json parameters
@@ -293,7 +303,8 @@ def create_job():
         return 'Invalid config', 400
 
     job = Job(user_id=user.id, token_estimate=int(token_estimate),
-              csv_path='', config_path='', config_json=json.dumps(config_data),
+              csv_path='', config_path='', directive_path='',
+              config_json=json.dumps(config_data),
               description=description)
     db.session.add(job)
     db.session.commit()
@@ -302,12 +313,15 @@ def create_job():
     os.makedirs(job_folder, exist_ok=True)
     csv_path = os.path.join(job_folder, csv_file.filename)
     config_path = os.path.join(job_folder, 'config.json')
+    directive_path = os.path.join(job_folder, 'directive.txt')
     csv_file.save(csv_path)
     with open(config_path, 'w', encoding='utf-8') as f:
         f.write(config_bytes.decode('utf-8'))
+    directive_file.save(directive_path)
 
     job.csv_path = csv_path
     job.config_path = config_path
+    job.directive_path = directive_path
     db.session.commit()
 
     return redirect(url_for('index', token=token))
