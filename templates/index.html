@@ -32,8 +32,11 @@
     <th>Status</th>
     <th>Estimate</th>
     <th>Used</th>
+    <th>Processed</th>
+    <th>Error rows</th>
     <th>Error</th>
     <th>Output</th>
+    <th>Snapshot</th>
     {% if user.role == 'supervisor' %}<th>Actions</th>{% endif %}
   </tr>
   {% for job in jobs %}
@@ -43,10 +46,17 @@
     <td>{{ job.status }}</td>
     <td>{{ job.token_estimate }}</td>
     <td>{{ job.tokens_used }}</td>
+    <td>{{ job.rows_processed }}/{{ job.total_rows }}</td>
+    <td>{{ job.error_rows }}</td>
     <td>{{ job.error or '' }}</td>
     <td>
       {% if job.status == 'done' and job.output_path %}
         <a href="/jobs/{{job.id}}/output?token={{ token }}">Download</a>
+      {% else %}-{% endif %}
+    </td>
+    <td>
+      {% if job.snapshot_path %}
+        <a href="/jobs/{{job.id}}/snapshot?token={{ token }}">Snapshot</a>
       {% else %}-{% endif %}
     </td>
     {% if user.role == 'supervisor' %}
@@ -60,11 +70,22 @@
           <input type="hidden" name="token" value="{{ token }}"/>
           <button type="submit">Reject</button>
         </form>
-      {% elif job.status in ['approved', 'processing'] %}
+      {% elif job.status in ['approved', 'processing', 'paused'] %}
         <form action="/jobs/{{job.id}}/cancel" method="post" style="display:inline;">
           <input type="hidden" name="token" value="{{ token }}"/>
           <button type="submit">Cancel</button>
         </form>
+        {% if job.status == 'processing' %}
+        <form action="/jobs/{{job.id}}/pause" method="post" style="display:inline;">
+          <input type="hidden" name="token" value="{{ token }}"/>
+          <button type="submit">Pause</button>
+        </form>
+        {% elif job.status == 'paused' %}
+        <form action="/jobs/{{job.id}}/resume" method="post" style="display:inline;">
+          <input type="hidden" name="token" value="{{ token }}"/>
+          <button type="submit">Resume</button>
+        </form>
+        {% endif %}
       {% endif %}
     </td>
     {% endif %}
