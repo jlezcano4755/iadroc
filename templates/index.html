@@ -6,7 +6,8 @@
     function enableVerify() {
       const csv = document.getElementById('csv').files.length;
       const config = document.getElementById('config').files.length;
-      document.getElementById('verify').disabled = !(csv && config);
+      const directive = document.getElementById('directive').files.length;
+      document.getElementById('verify').disabled = !(csv && config && directive);
     }
     function verifyFiles() {
       const formData = new FormData(document.getElementById('jobForm'));
@@ -102,6 +103,7 @@
   Description: <input type="text" name="description"><br>
   CSV: <input type="file" id="csv" name="csv" onchange="enableVerify()"><br>
   Config: <input type="file" id="config" name="config" onchange="enableVerify()"><br>
+  Directive: <input type="file" id="directive" name="directive" onchange="enableVerify()"><br>
   Token estimate: <span id="tokens">-</span><br>
   <button type="button" id="verify" onclick="verifyFiles()" disabled>Verify</button>
   <button type="submit" id="send" disabled>Send</button>

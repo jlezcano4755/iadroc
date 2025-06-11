@@ -1,0 +1,1 @@
+Extract the subject, predicate and verb from the input text using Spanish grammar rules. Respond using JSON with keys subject, predicate and verb only.
