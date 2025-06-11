@@ -249,7 +249,6 @@ def verify_files():
     csv_file = request.files.get('csv')
     config_file = request.files.get('config')
     directive_file = request.files.get('directive')
-    directive_file = request.files.get('directive')
     if not csv_file or not config_file or not directive_file:
         return jsonify({'error': 'Missing files'}), 400
 
@@ -288,6 +287,7 @@ def create_job():
 
     csv_file = request.files.get('csv')
     config_file = request.files.get('config')
+    directive_file = request.files.get('directive')
     token_estimate = request.form.get('token_estimate')
     description = request.form.get('description')
 
