@@ -8,7 +8,7 @@ AI-based Asynchronous Data Processor example using Flask and SQLite.
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-flask --app app.py initdb  # create demo users
+flask --app app.py initdb  # reset DB and create demo users
 ```
 
 ## Running
@@ -21,3 +21,5 @@ Access the application at `http://localhost:5000/?token=demo` for the analyst us
 
 The supervisor dashboard lists the history of all jobs with controls to approve,
 reject or cancel them.
+
+The configuration file must include the OpenAI API key, model parameters, the CSV delimiter and how often to create snapshots. See `config.json` for an example of the expected format.
