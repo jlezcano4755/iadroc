@@ -4,6 +4,7 @@ import json
 import threading
 import time
 import shutil
+import random
 import openai
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, redirect, url_for, send_file
@@ -73,10 +74,55 @@ def analyze_csv(csv_path: str, target: str, delimiter: str = ','):
                 return True, text  # return first non-empty row text
     return False, None
 
-def token_estimator(text: str) -> int:
-    return len(text.split())  # naive token estimate
+def token_estimator(csv_path: str, config: dict, sample_size: int = 5) -> int:
+    """Estimate total token usage by sampling rows and querying OpenAI."""
+    delimiter = config.get('delimiter', ',')
+    with open(csv_path, newline='', encoding='utf-8') as f:
+        rows = list(csv.DictReader(f, delimiter=delimiter))
 
-def openai_process(row: dict, config: dict) -> dict:
+    if not rows:
+        return 0
+
+    sample_rows = random.sample(rows, min(sample_size, len(rows)))
+    client = openai.OpenAI(api_key=config.get('openai_api_key'))
+    total_tokens = 0
+    successful = 0
+
+    for row in sample_rows:
+        text = row.get(config['target'], '') or ''
+        if not text.strip():
+            continue
+        retries = config.get('retry_times', 3)
+        last_err = None
+        for _ in range(retries):
+            try:
+                resp = client.chat.completions.create(
+                    model=config.get('model', 'gpt-3.5-turbo'),
+                    messages=[
+                        {"role": "system", "content": config.get('directive', '')},
+                        {"role": "user", "content": text}
+                    ],
+                    temperature=config.get('temperature', 0.2),
+                    max_tokens=config.get('max_tokens', 128),
+                    response_format={"type": "json_object"}
+                )
+                if resp.usage:
+                    total_tokens += resp.usage.total_tokens
+                    successful += 1
+                break
+            except Exception as e:
+                last_err = e
+        else:
+            continue
+
+    if successful == 0:
+        raise RuntimeError(str(last_err))
+
+    avg_tokens = total_tokens / successful
+    return int(avg_tokens * len(rows))
+
+def openai_process(row: dict, config: dict) -> tuple:
+    """Process a row with OpenAI and return the updated row and tokens used."""
     text = row.get(config['target'], '') or ''
     retries = config.get('retry_times', 3)
     client = openai.OpenAI(api_key=config.get('openai_api_key'))
@@ -97,7 +143,8 @@ def openai_process(row: dict, config: dict) -> dict:
             data = json.loads(content)
             for col in config.get('new_columns', []):
                 row[col] = data.get(col, '')
-            return row
+            tokens_used = resp.usage.total_tokens if resp.usage else 0
+            return row, tokens_used
         except Exception as e:
             last_err = e
     raise RuntimeError(str(last_err))
@@ -140,11 +187,11 @@ def process_job_async(job_id: int):
                     continue
 
                 try:
-                    result = openai_process(row, config)
+                    result, used = openai_process(row, config)
                 except Exception as e:
                     job.error_rows += 1
                     job.error = str(e)
-                    result = row
+                    result, used = row, 0
 
                 if writer is None:
                     writer = csv.DictWriter(out_f, fieldnames=result.keys(), delimiter=delimiter)
@@ -153,7 +200,7 @@ def process_job_async(job_id: int):
                 writer.writerow(result)
                 out_f.flush()
                 job.rows_processed = idx + 1
-                job.tokens_used += token_estimator(row.get(config['target'], ''))
+                job.tokens_used += used
                 if job.rows_processed % snapshot_interval == 0:
                     snap = os.path.join(os.path.dirname(job.csv_path), f'snapshot_{job.rows_processed}.csv')
                     shutil.copy(output_path, snap)
@@ -210,11 +257,14 @@ def verify_files():
     if not validate_config(config):
         return jsonify({'error': 'Config missing required fields'}), 400
 
-    ok, sample_text = analyze_csv(csv_path, config['target'], config.get('delimiter', ','))
+    ok, _ = analyze_csv(csv_path, config['target'], config.get('delimiter', ','))
     if not ok:
         return jsonify({'error': 'CSV missing target column or no valid rows'}), 400
 
-    token_est = token_estimator(sample_text)
+    try:
+        token_est = token_estimator(csv_path, config)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
     return jsonify({'message': 'verified', 'token_estimate': token_est})
 
 @app.route('/jobs', methods=['POST'])
