@@ -33,6 +33,7 @@
     <th>Estimate</th>
     <th>Used</th>
     <th>Error</th>
+    <th>Output</th>
     {% if user.role == 'supervisor' %}<th>Actions</th>{% endif %}
   </tr>
   {% for job in jobs %}
@@ -43,6 +44,11 @@
     <td>{{ job.token_estimate }}</td>
     <td>{{ job.tokens_used }}</td>
     <td>{{ job.error or '' }}</td>
+    <td>
+      {% if job.status == 'done' and job.output_path %}
+        <a href="/jobs/{{job.id}}/output?token={{ token }}">Download</a>
+      {% else %}-{% endif %}
+    </td>
     {% if user.role == 'supervisor' %}
     <td>
       {% if job.status == 'pending' %}

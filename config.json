@@ -2,6 +2,18 @@
   "retry_times": 3,
   "max_rows": 10,
   "model": "placeholder",
-  "target": "text",
-  "new_columns": ["length"]
+  "target": "sample_text",
+  "new_columns": ["subject", "predicate", "verb"],
+  "verbs": [
+    "corre",
+    "iremos",
+    "has visto",
+    "estudia",
+    "terminó",
+    "está",
+    "llega",
+    "cancelaremos",
+    "bailaron",
+    "entiendo"
+  ]
 }
