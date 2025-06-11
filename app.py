@@ -3,7 +3,7 @@ import csv
 import json
 import threading
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template, redirect, url_for, send_file
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
@@ -37,6 +37,7 @@ class Job(db.Model):
     tokens_used = db.Column(db.Integer, default=0)
     error = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    output_path = db.Column(db.String(200))
 
 # --------------------
 # Helper functions
@@ -66,10 +67,27 @@ def token_estimator(text: str) -> int:
     return len(text.split())  # naive token estimate
 
 def placeholder_process(row: dict, config: dict) -> dict:
-    # Simulate model output by appending a new column with text length
+    """Simple rule based extraction of subject, predicate and verb."""
     result = row.copy()
-    for col in config.get('new_columns', {}):
-        result[col] = len(row.get(config['target'], ''))
+    text = row.get(config['target'], '') or ''
+    verbs = config.get('verbs', [])
+    text_lower = text.lower()
+    verb_found = ''
+    idx = None
+    for vb in verbs:
+        pos = text_lower.find(vb.lower())
+        if pos != -1 and (idx is None or pos < idx):
+            idx = pos
+            verb_found = text[pos:pos+len(vb)]
+    if idx is not None:
+        subject = text[:idx].strip()
+        predicate = text[idx:].strip()
+    else:
+        subject = ''
+        predicate = text
+    result['subject'] = subject or '(desconocido)'
+    result['predicate'] = predicate
+    result['verb'] = verb_found
     return result
 
 def process_job_async(job_id: int):
@@ -94,7 +112,15 @@ def process_job_async(job_id: int):
                 result = placeholder_process(row, config)
                 processed_rows.append(result)
                 count += 1
-        # For this simple app we won't write output, just simulate tokens_used
+
+        if processed_rows:
+            output_path = os.path.join(os.path.dirname(job.csv_path), 'output.csv')
+            with open(output_path, 'w', newline='', encoding='utf-8') as out_f:
+                writer = csv.DictWriter(out_f, fieldnames=processed_rows[0].keys())
+                writer.writeheader()
+                writer.writerows(processed_rows)
+            job.output_path = output_path
+
         job.tokens_used = sum(token_estimator(row[config['target']]) for row in processed_rows)
         job.status = 'done'
     except Exception as e:
@@ -249,6 +275,19 @@ def job_status(job_id):
         'tokens_used': job.tokens_used,
         'error': job.error,
     })
+
+@app.route('/jobs/<int:job_id>/output')
+def job_output(job_id):
+    token = request.args.get('token')
+    user = get_user_from_token(token)
+    if not user:
+        return 'Unauthorized', 401
+    job = Job.query.get_or_404(job_id)
+    if job.user_id != user.id and user.role != 'supervisor':
+        return 'Forbidden', 403
+    if job.status != 'done' or not job.output_path or not os.path.exists(job.output_path):
+        return 'No output available', 404
+    return send_file(job.output_path, as_attachment=True)
 
 # --------------------
 # Command to initialize DB with a sample analyst and supervisor
