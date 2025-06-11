@@ -79,20 +79,21 @@ def token_estimator(text: str) -> int:
 def openai_process(row: dict, config: dict) -> dict:
     text = row.get(config['target'], '') or ''
     retries = config.get('retry_times', 3)
-    openai.api_key = config.get('openai_api_key')
+    client = openai.OpenAI(api_key=config.get('openai_api_key'))
     last_err = None
     for _ in range(retries):
         try:
-            resp = openai.ChatCompletion.create(
+            resp = client.chat.completions.create(
                 model=config.get('model', 'gpt-3.5-turbo'),
                 messages=[
                     {"role": "system", "content": config.get('directive', '')},
                     {"role": "user", "content": text}
                 ],
                 temperature=config.get('temperature', 0.2),
-                max_tokens=config.get('max_tokens', 128)
+                max_tokens=config.get('max_tokens', 128),
+                response_format={"type": "json_object"}
             )
-            content = resp.choices[0].message['content']
+            content = resp.choices[0].message.content
             data = json.loads(content)
             for col in config.get('new_columns', []):
                 row[col] = data.get(col, '')

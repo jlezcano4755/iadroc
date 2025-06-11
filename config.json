@@ -7,7 +7,7 @@
   "delimiter": ",",
   "snapshot_rows": 5,
   "new_columns": ["subject", "predicate", "verb"],
-  "directive": "Extract the subject, predicate and verb from the input text using Spanish grammar rules. Return a JSON dictionary with keys subject, predicate and verb.",
+  "directive": "Extract the subject, predicate and verb from the input text using Spanish grammar rules. Respond using JSON with keys subject, predicate and verb only.",
   "schema": {
     "type": "object",
     "properties": {
