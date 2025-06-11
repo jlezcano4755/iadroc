@@ -1,11 +1,11 @@
-id,sample_text
-1,El perro corre felizmente por el parque.
-2,Mañana iremos al cine con nuestros amigos.
-3,¿Has visto mis llaves por algún lado?
-4,María estudia medicina en la universidad.
-5,Aunque estaba cansado, terminó todo su trabajo.
-6,¡Qué hermosa está la luna esta noche!
-7,El tren llega a las ocho en punto.
-8,Si llueve, cancelaremos el picnic.
-9,Carlos y Ana bailaron toda la noche.
-10,No entiendo por qué no me llamaste ayer.
+id;sample_text
+1;El perro corre felizmente por el parque.
+2;Mañana iremos al cine con nuestros amigos.
+3;¿Has visto mis llaves por algún lado?
+4;María estudia medicina en la universidad.
+5;Aunque estaba cansado, terminó todo su trabajo.
+6;¡Qué hermosa está la luna esta noche!
+7;El tren llega a las ocho en punto.
+8;Si llueve, cancelaremos el picnic.
+9;Carlos y Ana bailaron toda la noche.
+10;No entiendo por qué no me llamaste ayer.
