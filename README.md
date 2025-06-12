@@ -1,46 +1,97 @@
 # iadroc
 
-AI-based Asynchronous Data Processor example using Flask and SQLite.
+Herramienta de procesamiento asíncrono de datos basada en IA utilizando Flask y SQLite.
 
-## Setup
+## Guía técnica completa
+
+Esta guía está orientada a analistas que desean usar la aplicación sin necesidad de tener amplios conocimientos de programación en Python. A continuación se explica paso a paso la instalación, el uso y las opciones de configuración.
+
+### 1. Requisitos previos
+
+- Python 3.9 o superior.
+- Acceso a internet para instalar dependencias y para conectarse a la API de OpenAI.
+- Opcionalmente Docker si se prefiere ejecutar la aplicación en un contenedor.
+
+### 2. Instalación del entorno
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-flask --app app.py initdb  # reset DB and create demo users
-flask --app app.py create-user alice secret analyst  # add more users
+flask --app app.py initdb  # restablece la base de datos y crea usuarios de demostración
+flask --app app.py create-user alice secret analyst  # ejemplo para añadir usuarios
 ```
 
-## Running
+El comando `initdb` genera una base de datos vacía e incorpora un usuario "demo" (analista) y un usuario "super" (supervisor). El comando `create-user` permite agregar nuevos usuarios indicando nombre, token y rol ("analyst" o "supervisor").
+
+### 3. Puesta en marcha
 
 ```bash
 FLASK_APP=app.py flask run
 ```
 
-Start the server and open `http://localhost:5000` in your browser. Use the demo
-credentials (`demo`/`demo` for the analyst or `super`/`maxiasuper` for the
-supervisor) to log in.
+Al iniciar el servidor visita `http://localhost:5000` en el navegador e inicia sesión con las credenciales de demostración (`demo`/`demo` para el analista o `super`/`maxiasuper` para el supervisor).
 
-The supervisor dashboard lists the history of all jobs with controls to approve,
-reject or cancel them.
+### 4. Uso de la interfaz
 
-The configuration file must include the OpenAI API key **encoded in base64**, model parameters, the CSV delimiter and how often to create snapshots.  The prompt for the AI is provided separately in `directive.txt`.  The app uses OpenAI's JSON mode to enforce structured responses, so make sure you have a recent `openai` package installed.  See `config.json` and `directive.txt` for examples of the expected format.
-When using JSON mode your prompt must mention the word "json" somewhere.  The application now appends a short reminder automatically if it is missing.
+1. **Crear un trabajo**
+   - Selecciona un archivo CSV, un archivo `config.json` y un `directive.txt`.
+   - Presiona **Verificar** para calcular una estimación de tokens que serán necesarios.
+   - Si los archivos son válidos se habilitará el botón **Enviar**. Introduce una descripción opcional y envía el trabajo.
 
-Jobs can optionally include a short description so they are easier to recognize in the dashboard.
-When creating a job you must upload three files: the CSV data, the `config.json` settings file and the `directive.txt` file containing the prompt for the AI.
+2. **Roles de usuario**
+   - **Analista**: puede crear trabajos y consultar su progreso.
+   - **Supervisor**: además de lo anterior, puede aprobar, rechazar, pausar, reanudar o cancelar trabajos.
 
-## Docker
+3. **Estados del trabajo**
+   - `pending`: el analista ha enviado el trabajo y espera revisión.
+   - `approved`: el supervisor aprobó el trabajo y comenzó el procesamiento.
+   - `processing`: el trabajo se está ejecutando en segundo plano.
+   - `paused`: el supervisor ha pausado temporalmente el procesamiento.
+   - `done`: el trabajo finalizó correctamente y se puede descargar el resultado.
+   - `failed`: ocurrió un error durante el procesamiento.
+   - `rejected` o `cancelled`: el supervisor rechazó o canceló el trabajo.
 
-Build the Docker image and push it to Docker Hub (replace `youruser` with your username):
+En la tabla principal se muestran todos los trabajos con la información de tokens, filas procesadas, errores y enlaces para descargar tanto el resultado final como capturas intermedias.
+
+### 5. Archivos necesarios para un trabajo
+
+- **CSV de datos**: contiene las filas a procesar. El campo objetivo se define en el archivo de configuración.
+- **config.json**: especifica parámetros como el modelo de OpenAI, cantidad máxima de filas, nuevas columnas y delimitador del CSV. También debe incluir la clave de API de OpenAI codificada en base64.
+- **directive.txt**: prompt que se enviará al modelo. Debe mencionar la palabra "json" para que la aplicación utilice el modo JSON y reciba respuestas estructuradas.
+
+Consulta los archivos `config.json` y `directive.txt` incluidos en el repositorio como ejemplo del formato esperado.
+
+### 6. Personalización de `config.json`
+
+A continuación se describen los campos más relevantes:
+
+- `retry_times`: número de reintentos si ocurre un error al consultar la API.
+- `max_rows`: límite de filas a procesar (0 para procesar todas).
+- `openai_api_key`: clave de OpenAI codificada en base64.
+- `model`: modelo a utilizar (por ejemplo `gpt-3.5-turbo`).
+- `target`: nombre de la columna del CSV que contiene el texto a analizar.
+- `delimiter`: delimitador utilizado en el CSV.
+- `snapshot_rows`: frecuencia (en filas) con la que se guardan capturas parciales.
+- `new_columns`: lista de columnas que se añadirán al resultado según la respuesta de la IA.
+- `schema`: esquema JSON opcional para validar la respuesta del modelo.
+
+### 7. Consejos de uso
+
+- Siempre verifica que la clave de OpenAI esté correctamente codificada en base64.
+- Mantén un registro de los tokens estimados y usados para controlar los costos.
+- El directorio `uploads` almacena los archivos de cada trabajo. Puedes limpiar este directorio periódicamente si el tamaño crece demasiado.
+
+### 8. Ejecución mediante Docker
+
+Construye la imagen y publícala (reemplaza `youruser` por tu usuario de Docker Hub):
 
 ```bash
 docker build -t youruser/iadroc:latest .
 docker push youruser/iadroc:latest
 ```
 
-Run the container mounting a directory to persist the database and uploads:
+Ejecuta el contenedor montando un directorio para mantener la base de datos y las subidas:
 
 ```bash
 docker run -d -p 5000:5000 \
@@ -50,11 +101,14 @@ docker run -d -p 5000:5000 \
   --name iadroc youruser/iadroc:latest
 ```
 
-After the container starts, initialize the database and create accounts:
+Tras iniciar el contenedor, inicializa la base de datos y crea las cuentas necesarias:
 
 ```bash
 docker exec iadroc flask initdb
-# docker exec iadroc flask create-user <name> <token> <role>
+# docker exec iadroc flask create-user <nombre> <token> <rol>
 ```
 
-Then open `http://localhost:5000` and log in with your credentials.
+### 9. Soporte y colaboración
+
+Si encuentras problemas o deseas proponer mejoras, abre un *issue* o envía un *pull request* en el repositorio. Tus aportes son bienvenidos.
+
