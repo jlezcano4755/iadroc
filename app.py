@@ -12,9 +12,11 @@ from flask import Flask, request, jsonify, render_template, redirect, url_for, s
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///iadroc.db'
+DB_PATH = os.getenv('DB_PATH', 'iadroc.db')
+UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 db = SQLAlchemy(app)
@@ -498,8 +500,8 @@ def job_snapshot(job_id):
 
 @app.cli.command('initdb')
 def initdb():
-    if os.path.exists('iadroc.db'):
-        os.remove('iadroc.db')
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
     shutil.rmtree(app.config['UPLOAD_FOLDER'], ignore_errors=True)
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     db.create_all()
