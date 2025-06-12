@@ -27,3 +27,24 @@ When using JSON mode your prompt must mention the word "json" somewhere.  The ap
 
 Jobs can optionally include a short description so they are easier to recognize in the dashboard.
 When creating a job you must upload three files: the CSV data, the `config.json` settings file and the `directive.txt` file containing the prompt for the AI.
+
+## Docker
+
+Build the Docker image and push it to Docker Hub (replace `youruser` with your username):
+
+```bash
+docker build -t youruser/iadroc:latest .
+docker push youruser/iadroc:latest
+```
+
+Run the container mounting a directory to persist the database and uploads:
+
+```bash
+docker run -d -p 5000:5000 \
+  -v $PWD/data:/data \
+  -e DB_PATH=/data/iadroc.db \
+  -e UPLOAD_FOLDER=/data/uploads \
+  --name iadroc youruser/iadroc:latest
+```
+
+Then open `http://localhost:5000/?token=demo` or `?token=maxiasuper` in your browser.
