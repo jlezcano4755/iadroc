@@ -71,6 +71,12 @@ def validate_config(config: dict):
     ]
     return all(key in config for key in required_keys)
 
+def ensure_json_hint(text: str) -> str:
+    """Ensure the directive mentions JSON to satisfy OpenAI's JSON mode."""
+    if 'json' not in text.lower():
+        return text.strip() + "\n\nResponde exclusivamente con un objeto JSON."
+    return text
+
 def analyze_csv(csv_path: str, target: str, delimiter: str = ','):
     with open(csv_path, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f, delimiter=delimiter)
@@ -84,6 +90,7 @@ def analyze_csv(csv_path: str, target: str, delimiter: str = ','):
 
 def token_estimator(csv_path: str, config: dict, directive: str, sample_size: int = 5) -> dict:
     """Estimate token usage by sampling rows and querying OpenAI."""
+    directive = ensure_json_hint(directive)
     delimiter = config.get('delimiter', ',')
     with open(csv_path, newline='', encoding='utf-8') as f:
         rows = list(csv.DictReader(f, delimiter=delimiter))
@@ -143,6 +150,7 @@ def token_estimator(csv_path: str, config: dict, directive: str, sample_size: in
 def openai_process(row: dict, config: dict, directive: str) -> tuple:
     """Process a row with OpenAI and return the updated row and token usage."""
     text = row.get(config['target'], '') or ''
+    directive = ensure_json_hint(directive)
     retries = config.get('retry_times', 3)
     api_key = base64.b64decode(config.get('openai_api_key')).decode()
     client = openai.OpenAI(api_key=api_key)
