@@ -8,10 +8,12 @@ import random
 import base64
 import openai
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, redirect, url_for, send_file
+from flask import Flask, request, jsonify, render_template, redirect, url_for, send_file, session
+import click
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'dev-secret')
 DB_PATH = os.getenv('DB_PATH', 'iadroc.db')
 UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads')
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_PATH}'
@@ -65,6 +67,12 @@ def get_user_from_token(token: str):
     if not token:
         return None
     return User.query.filter_by(token=token).first()
+
+def get_current_user():
+    user_id = session.get('user_id')
+    if user_id:
+        return User.query.get(user_id)
+    return None
 
 def validate_config(config: dict):
     required_keys = [
@@ -261,20 +269,33 @@ def process_job_async(job_id: int):
 
 @app.route('/')
 def index():
-    token = request.args.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user:
-        return 'Unauthorized', 401
+        return render_template('login.html')
     if user.role == 'supervisor':
         jobs = Job.query.order_by(Job.created_at.desc()).all()
     else:
         jobs = Job.query.filter_by(user_id=user.id).order_by(Job.created_at.desc()).all()
-    return render_template('index.html', user=user, jobs=jobs, token=token)
+    return render_template('index.html', user=user, jobs=jobs)
+
+@app.route('/login', methods=['POST'])
+def login():
+    name = request.form.get('username')
+    token = request.form.get('token')
+    user = User.query.filter_by(name=name, token=token).first()
+    if user:
+        session['user_id'] = user.id
+        return redirect(url_for('index'))
+    return render_template('login.html', error='Invalid credentials')
+
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('index'))
 
 @app.route('/verify', methods=['POST'])
 def verify_files():
-    token = request.form.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user:
         return jsonify({'error': 'Unauthorized'}), 401
     csv_file = request.files.get('csv')
@@ -316,8 +337,7 @@ def verify_files():
 
 @app.route('/jobs', methods=['POST'])
 def create_job():
-    token = request.form.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user:
         return 'Unauthorized', 401
 
@@ -371,12 +391,11 @@ def create_job():
     job.directive_path = directive_path
     db.session.commit()
 
-    return redirect(url_for('index', token=token))
+    return redirect(url_for('index'))
 
 @app.route('/jobs/<int:job_id>/approve', methods=['POST'])
 def approve_job(job_id):
-    token = request.form.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user or user.role != 'supervisor':
         return 'Forbidden', 403
 
@@ -386,12 +405,11 @@ def approve_job(job_id):
 
     threading.Thread(target=process_job_async, args=(job.id,)).start()
 
-    return redirect(url_for('index', token=token))
+    return redirect(url_for('index'))
 
 @app.route('/jobs/<int:job_id>/reject', methods=['POST'])
 def reject_job(job_id):
-    token = request.form.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user or user.role != 'supervisor':
         return 'Forbidden', 403
 
@@ -399,12 +417,11 @@ def reject_job(job_id):
     job.status = 'rejected'
     db.session.commit()
 
-    return redirect(url_for('index', token=token))
+    return redirect(url_for('index'))
 
 @app.route('/jobs/<int:job_id>/cancel', methods=['POST'])
 def cancel_job(job_id):
-    token = request.form.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user or user.role != 'supervisor':
         return 'Forbidden', 403
 
@@ -413,12 +430,11 @@ def cancel_job(job_id):
         job.status = 'cancelled'
         db.session.commit()
 
-    return redirect(url_for('index', token=token))
+    return redirect(url_for('index'))
 
 @app.route('/jobs/<int:job_id>/pause', methods=['POST'])
 def pause_job(job_id):
-    token = request.form.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user or user.role != 'supervisor':
         return 'Forbidden', 403
 
@@ -427,12 +443,11 @@ def pause_job(job_id):
         job.status = 'paused'
         db.session.commit()
 
-    return redirect(url_for('index', token=token))
+    return redirect(url_for('index'))
 
 @app.route('/jobs/<int:job_id>/resume', methods=['POST'])
 def resume_job(job_id):
-    token = request.form.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user or user.role != 'supervisor':
         return 'Forbidden', 403
 
@@ -441,12 +456,11 @@ def resume_job(job_id):
         job.status = 'processing'
         db.session.commit()
 
-    return redirect(url_for('index', token=token))
+    return redirect(url_for('index'))
 
 @app.route('/jobs/<int:job_id>')
 def job_status(job_id):
-    token = request.args.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user:
         return 'Unauthorized', 401
     job = Job.query.get_or_404(job_id)
@@ -470,8 +484,7 @@ def job_status(job_id):
 
 @app.route('/jobs/<int:job_id>/output')
 def job_output(job_id):
-    token = request.args.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user:
         return 'Unauthorized', 401
     job = Job.query.get_or_404(job_id)
@@ -483,8 +496,7 @@ def job_output(job_id):
 
 @app.route('/jobs/<int:job_id>/snapshot')
 def job_snapshot(job_id):
-    token = request.args.get('token')
-    user = get_user_from_token(token)
+    user = get_current_user()
     if not user:
         return 'Unauthorized', 401
     job = Job.query.get_or_404(job_id)
@@ -510,6 +522,21 @@ def initdb():
     db.session.add_all([analyst, supervisor])
     db.session.commit()
     print('Database reset with demo users.')
+
+@app.cli.command('create-user')
+@click.argument('name')
+@click.argument('token')
+@click.argument('role')
+def create_user(name, token, role):
+    """Add a user to the database."""
+    db.create_all()
+    if User.query.filter_by(name=name).first():
+        print('User already exists')
+        return
+    user = User(name=name, token=token, role=role)
+    db.session.add(user)
+    db.session.commit()
+    print('User created.')
 
 if __name__ == '__main__':
     app.run(debug=True)

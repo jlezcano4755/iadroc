@@ -28,7 +28,7 @@
     function refreshEstados(){
       document.querySelectorAll('tr[data-job-id]').forEach(row=>{
         const id = row.dataset.jobId;
-        fetch(`/jobs/${id}?token={{ token }}`)
+        fetch(`/jobs/${id}`)
           .then(r=>r.json())
           .then(d=>{
             row.querySelector('.status').innerText = d.status;
@@ -40,13 +40,13 @@
             row.querySelector('.error').innerText = d.error || '';
             const out = row.querySelector('.output');
             if(d.status==='done' && d.tokens_used>0){
-              out.innerHTML = `<a href="/jobs/${id}/output?token={{ token }}">Descargar</a>`;
+              out.innerHTML = `<a href="/jobs/${id}/output">Descargar</a>`;
             }else{
               out.innerHTML = '-';
             }
             const snap = row.querySelector('.snapshot');
             if(d.snapshot_path){
-              snap.innerHTML = `<a href="/jobs/${id}/snapshot?token={{ token }}">Captura</a>`;
+              snap.innerHTML = `<a href="/jobs/${id}/snapshot">Captura</a>`;
             }else{
               snap.innerHTML = '-';
             }
@@ -63,7 +63,7 @@
   </style>
 </head>
 <body>
-<div>Usuario: {{ user.name }}</div>
+<div>Usuario: {{ user.name }} (<a href="/logout">Salir</a>)</div>
 <div>{% if user.role == 'supervisor' %}Todos los trabajos{% else %}Tus trabajos{% endif %}</div>
 <table>
   <tr>
@@ -101,38 +101,33 @@
     <td class="error">{{ job.error or '' }}</td>
     <td class="output">
       {% if job.status == 'done' and job.output_path %}
-        <a href="/jobs/{{job.id}}/output?token={{ token }}">Descargar</a>
+        <a href="/jobs/{{job.id}}/output">Descargar</a>
       {% else %}-{% endif %}
     </td>
     <td class="snapshot">
       {% if job.snapshot_path %}
-        <a href="/jobs/{{job.id}}/snapshot?token={{ token }}">Captura</a>
+        <a href="/jobs/{{job.id}}/snapshot">Captura</a>
       {% else %}-{% endif %}
     </td>
     {% if user.role == 'supervisor' %}
     <td>
       {% if job.status == 'pending' %}
         <form action="/jobs/{{job.id}}/approve" method="post" style="display:inline;">
-          <input type="hidden" name="token" value="{{ token }}"/>
           <button type="submit">Aprobar</button>
         </form>
         <form action="/jobs/{{job.id}}/reject" method="post" style="display:inline;">
-          <input type="hidden" name="token" value="{{ token }}"/>
           <button type="submit">Rechazar</button>
         </form>
       {% elif job.status in ['approved', 'processing', 'paused'] %}
         <form action="/jobs/{{job.id}}/cancel" method="post" style="display:inline;">
-          <input type="hidden" name="token" value="{{ token }}"/>
           <button type="submit">Cancelar</button>
         </form>
         {% if job.status == 'processing' %}
         <form action="/jobs/{{job.id}}/pause" method="post" style="display:inline;">
-          <input type="hidden" name="token" value="{{ token }}"/>
           <button type="submit">Pausar</button>
         </form>
         {% elif job.status == 'paused' %}
         <form action="/jobs/{{job.id}}/resume" method="post" style="display:inline;">
-          <input type="hidden" name="token" value="{{ token }}"/>
           <button type="submit">Continuar</button>
         </form>
         {% endif %}
@@ -145,7 +140,6 @@
 
 <div>Crear nuevo trabajo</div>
 <form id="jobForm" action="/jobs" method="post" enctype="multipart/form-data">
-  <input type="hidden" name="token" value="{{ token }}">
   <input type="hidden" id="token_estimate" name="token_estimate">
   <input type="hidden" id="token_estimate_prompt" name="token_estimate_prompt">
   <input type="hidden" id="token_estimate_completion" name="token_estimate_completion">
