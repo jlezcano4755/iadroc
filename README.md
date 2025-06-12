@@ -9,6 +9,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 flask --app app.py initdb  # reset DB and create demo users
+flask --app app.py create-user alice secret analyst  # add more users
 ```
 
 ## Running
@@ -17,7 +18,9 @@ flask --app app.py initdb  # reset DB and create demo users
 FLASK_APP=app.py flask run
 ```
 
-Access the application at `http://localhost:5000/?token=demo` for the analyst user or `http://localhost:5000/?token=maxiasuper` for the supervisor.
+Start the server and open `http://localhost:5000` in your browser. Use the demo
+credentials (`demo`/`demo` for the analyst or `super`/`maxiasuper` for the
+supervisor) to log in.
 
 The supervisor dashboard lists the history of all jobs with controls to approve,
 reject or cancel them.
@@ -47,4 +50,11 @@ docker run -d -p 5000:5000 \
   --name iadroc youruser/iadroc:latest
 ```
 
-Then open `http://localhost:5000/?token=demo` or `?token=maxiasuper` in your browser.
+After the container starts, initialize the database and create accounts:
+
+```bash
+docker exec iadroc flask initdb
+# docker exec iadroc flask create-user <name> <token> <role>
+```
+
+Then open `http://localhost:5000` and log in with your credentials.
