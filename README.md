@@ -1,10 +1,6 @@
 # iadroc
 
-Herramienta de procesamiento asíncrono de datos basada en IA utilizando Flask y SQLite.
-
-## Guía técnica completa
-
-Esta guía está orientada a analistas que desean usar la aplicación sin necesidad de tener amplios conocimientos de programación en Python. A continuación se explica paso a paso la instalación, el uso y las opciones de configuración.
+Herramienta de procesamiento asíncrono de datos utilizando IA.
 
 ### 1. Requisitos previos
 
@@ -78,7 +74,6 @@ A continuación se describen los campos más relevantes:
 
 ### 7. Consejos de uso
 
-- Siempre verifica que la clave de OpenAI esté correctamente codificada en base64.
 - Mantén un registro de los tokens estimados y usados para controlar los costos.
 - El directorio `uploads` almacena los archivos de cada trabajo. Puedes limpiar este directorio periódicamente si el tamaño crece demasiado.
 
