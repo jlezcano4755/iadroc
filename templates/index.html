@@ -1,7 +1,7 @@
 <!doctype html>
-<html>
+<html lang="es">
 <head>
-  <title>IADROC Jobs</title>
+  <meta charset="utf-8">
   <script>
     function enableVerify() {
       const csv = document.getElementById('csv').files.length;
@@ -25,53 +25,88 @@
         }
       });
     }
+    function refreshEstados(){
+      document.querySelectorAll('tr[data-job-id]').forEach(row=>{
+        const id = row.dataset.jobId;
+        fetch(`/jobs/${id}?token={{ token }}`)
+          .then(r=>r.json())
+          .then(d=>{
+            row.querySelector('.status').innerText = d.status;
+            row.querySelector('.used').innerText = d.tokens_prompt_used+"/"+d.tokens_completion_used+"/"+d.tokens_used;
+            row.querySelector('.avg').innerText = d.rows_processed ?
+              Math.floor(d.tokens_prompt_used/d.rows_processed)+"/"+Math.floor(d.tokens_completion_used/d.rows_processed) : '-/-';
+            row.querySelector('.processed').innerText = d.rows_processed+"/"+d.total_rows;
+            row.querySelector('.error_rows').innerText = d.error_rows;
+            row.querySelector('.error').innerText = d.error || '';
+            const out = row.querySelector('.output');
+            if(d.status==='done' && d.tokens_used>0){
+              out.innerHTML = `<a href="/jobs/${id}/output?token={{ token }}">Descargar</a>`;
+            }else{
+              out.innerHTML = '-';
+            }
+            const snap = row.querySelector('.snapshot');
+            if(d.snapshot_path){
+              snap.innerHTML = `<a href="/jobs/${id}/snapshot?token={{ token }}">Captura</a>`;
+            }else{
+              snap.innerHTML = '-';
+            }
+          });
+      });
+    }
+    setInterval(refreshEstados, 5000);
   </script>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:20px;}
+    table{border-collapse:collapse;width:100%;}
+    th,td{border:1px solid #ccc;padding:4px;}
+    th{background:#eee;}
+  </style>
 </head>
 <body>
-<h1>Welcome {{ user.name }}</h1>
-<h2>{% if user.role == 'supervisor' %}All jobs{% else %}Your jobs{% endif %}</h2>
-<table border="1" cellpadding="5" cellspacing="0">
+<div>Usuario: {{ user.name }}</div>
+<div>{% if user.role == 'supervisor' %}Todos los trabajos{% else %}Tus trabajos{% endif %}</div>
+<table>
   <tr>
     <th>ID</th>
-    {% if user.role == 'supervisor' %}<th>User</th>{% endif %}
-    <th>Description</th>
-    <th>Model</th>
-    <th>Status</th>
-    <th>Estimate (p/c/t)</th>
-    <th>Used (p/c/t)</th>
-    <th>Avg (p/c)</th>
-    <th>Processed</th>
-    <th>Error rows</th>
+    {% if user.role == 'supervisor' %}<th>Usuario</th>{% endif %}
+    <th>Descripción</th>
+    <th>Modelo</th>
+    <th>Estado</th>
+    <th>Estimado (p/c/t)</th>
+    <th>Usado (p/c/t)</th>
+    <th>Promedio (p/c)</th>
+    <th>Procesado</th>
+    <th>Filas con error</th>
     <th>Error</th>
-    <th>Output</th>
-    <th>Snapshot</th>
-    {% if user.role == 'supervisor' %}<th>Actions</th>{% endif %}
+    <th>Resultado</th>
+    <th>Captura</th>
+    {% if user.role == 'supervisor' %}<th>Acciones</th>{% endif %}
   </tr>
   {% for job in jobs %}
-  <tr>
+  <tr data-job-id="{{ job.id }}">
     <td>{{ job.id }}</td>
     {% if user.role == 'supervisor' %}<td>{{ job.user.name }}</td>{% endif %}
     <td>{{ job.description or '' }}</td>
     <td>{{ job.model }}</td>
-    <td>{{ job.status }}</td>
+    <td class="status">{{ job.status }}</td>
     <td>{{ job.token_estimate_prompt }}/{{ job.token_estimate_completion }}/{{ job.token_estimate }}</td>
-    <td>{{ job.tokens_prompt_used }}/{{ job.tokens_completion_used }}/{{ job.tokens_used }}</td>
-    <td>
+    <td class="used">{{ job.tokens_prompt_used }}/{{ job.tokens_completion_used }}/{{ job.tokens_used }}</td>
+    <td class="avg">
       {% if job.rows_processed %}
         {{ (job.tokens_prompt_used // job.rows_processed) }}/{{ (job.tokens_completion_used // job.rows_processed) }}
       {% else %}-/-{% endif %}
     </td>
-    <td>{{ job.rows_processed }}/{{ job.total_rows }}</td>
-    <td>{{ job.error_rows }}</td>
-    <td>{{ job.error or '' }}</td>
-    <td>
+    <td class="processed">{{ job.rows_processed }}/{{ job.total_rows }}</td>
+    <td class="error_rows">{{ job.error_rows }}</td>
+    <td class="error">{{ job.error or '' }}</td>
+    <td class="output">
       {% if job.status == 'done' and job.output_path %}
-        <a href="/jobs/{{job.id}}/output?token={{ token }}">Download</a>
+        <a href="/jobs/{{job.id}}/output?token={{ token }}">Descargar</a>
       {% else %}-{% endif %}
     </td>
-    <td>
+    <td class="snapshot">
       {% if job.snapshot_path %}
-        <a href="/jobs/{{job.id}}/snapshot?token={{ token }}">Snapshot</a>
+        <a href="/jobs/{{job.id}}/snapshot?token={{ token }}">Captura</a>
       {% else %}-{% endif %}
     </td>
     {% if user.role == 'supervisor' %}
@@ -79,26 +114,26 @@
       {% if job.status == 'pending' %}
         <form action="/jobs/{{job.id}}/approve" method="post" style="display:inline;">
           <input type="hidden" name="token" value="{{ token }}"/>
-          <button type="submit">Approve</button>
+          <button type="submit">Aprobar</button>
         </form>
         <form action="/jobs/{{job.id}}/reject" method="post" style="display:inline;">
           <input type="hidden" name="token" value="{{ token }}"/>
-          <button type="submit">Reject</button>
+          <button type="submit">Rechazar</button>
         </form>
       {% elif job.status in ['approved', 'processing', 'paused'] %}
         <form action="/jobs/{{job.id}}/cancel" method="post" style="display:inline;">
           <input type="hidden" name="token" value="{{ token }}"/>
-          <button type="submit">Cancel</button>
+          <button type="submit">Cancelar</button>
         </form>
         {% if job.status == 'processing' %}
         <form action="/jobs/{{job.id}}/pause" method="post" style="display:inline;">
           <input type="hidden" name="token" value="{{ token }}"/>
-          <button type="submit">Pause</button>
+          <button type="submit">Pausar</button>
         </form>
         {% elif job.status == 'paused' %}
         <form action="/jobs/{{job.id}}/resume" method="post" style="display:inline;">
           <input type="hidden" name="token" value="{{ token }}"/>
-          <button type="submit">Resume</button>
+          <button type="submit">Continuar</button>
         </form>
         {% endif %}
       {% endif %}
@@ -108,21 +143,21 @@
   {% endfor %}
 </table>
 
-<h2>Create new job</h2>
+<div>Crear nuevo trabajo</div>
 <form id="jobForm" action="/jobs" method="post" enctype="multipart/form-data">
   <input type="hidden" name="token" value="{{ token }}">
   <input type="hidden" id="token_estimate" name="token_estimate">
   <input type="hidden" id="token_estimate_prompt" name="token_estimate_prompt">
   <input type="hidden" id="token_estimate_completion" name="token_estimate_completion">
-  Description: <input type="text" name="description"><br>
+  Descripción: <input type="text" name="description"><br>
   CSV: <input type="file" id="csv" name="csv" onchange="enableVerify()"><br>
   Config: <input type="file" id="config" name="config" onchange="enableVerify()"><br>
-  Directive: <input type="file" id="directive" name="directive" onchange="enableVerify()"><br>
-  Token estimate total: <span id="tokens_total">-</span><br>
-  Token estimate prompt: <span id="tokens_prompt">-</span><br>
-  Token estimate completion: <span id="tokens_completion">-</span><br>
-  <button type="button" id="verify" onclick="verifyFiles()" disabled>Verify</button>
-  <button type="submit" id="send" disabled>Send</button>
+  Directiva: <input type="file" id="directive" name="directive" onchange="enableVerify()"><br>
+  Estimación total de tokens: <span id="tokens_total">-</span><br>
+  Estimación de tokens de prompt: <span id="tokens_prompt">-</span><br>
+  Estimación de tokens de completado: <span id="tokens_completion">-</span><br>
+  <button type="button" id="verify" onclick="verifyFiles()" disabled>Verificar</button>
+  <button type="submit" id="send" disabled>Enviar</button>
 </form>
 </body>
 </html>
